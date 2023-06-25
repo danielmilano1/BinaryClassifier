@@ -4,6 +4,7 @@ import re
 import shutil
 import string
 import tensorflow as tf
+import numpy.linalg
 
 from keras import layers
 from keras import losses
@@ -106,10 +107,14 @@ text_batch, label_batch = next(iter(raw_train_ds))
 first_review, first_label = text_batch[0], label_batch[0]
 print("Review", first_review)
 print("Label", raw_train_ds.class_names[first_label])
-print("Vectorized review", vectorize_text(first_review, first_label))
+# print("Vectorized review", vectorize_text(first_review, first_label))
 
-print("1287 ---> ",vectorize_layer.get_vocabulary()[1287])
-print(" 313 ---> ",vectorize_layer.get_vocabulary()[313])
+vocabulary = vectorize_layer.get_vocabulary()
+if len(vocabulary) > 1287:
+    print("1287 ---> ", vocabulary[1287])
+else:
+    print("Index is out of range.")
+
 print('Vocabulary size: {}'.format(len(vectorize_layer.get_vocabulary())))
 
 # As a final preprocessing step, you will apply the TextVectorization layer 
@@ -157,3 +162,80 @@ history = model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=epochs)
+
+## Evaluate the model
+
+loss, accuracy = model.evaluate(test_ds)
+
+print("Loss: ", loss)
+print("Accuracy: ", accuracy)
+
+# model.fit() returns a History object that 
+# contains a dictionary with everything that happened during training:
+
+history_dict = history.history
+history_dict.keys()
+
+# 4 entries, 1 for each monitored metric
+# You can use these to plot the training and validation loss for comparison, 
+# as well as the training and validation accuracy:
+acc = history_dict['binary_accuracy']
+val_acc = history_dict['val_binary_accuracy']
+loss = history_dict['loss']
+val_loss = history_dict['val_loss']
+
+epochs = range(1, len(acc) + 1)
+
+# "bo" is for "blue dot"
+plt.plot(epochs, loss, 'bo', label='Training loss')
+# b is for "solid blue line"
+plt.plot(epochs, val_loss, 'b', label='Validation loss')
+plt.title('Training and validation loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.show()
+
+plt.plot(epochs, acc, 'bo', label='Training acc')
+plt.plot(epochs, val_acc, 'b', label='Validation acc')
+plt.title('Training and validation accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend(loc='lower right')
+
+plt.show()
+
+# In this plot, the dots represent the training loss and accuracy, and the solid lines are the validation loss and accuracy.
+
+# Notice the training loss decreases with each epoch and the training accuracy increases with each epoch. 
+# This is expected when using a gradient descent optimization
+# —it should minimize the desired quantity on every iteration.
+
+# For this particular case, you could prevent overfitting by simply stopping the training when the validation accuracy is no longer increasing.
+# One way to do so is to use the tf.keras.callbacks.EarlyStopping callback.
+
+# you can include the TextVectorization layer inside your model. To do so, you can create a new model using the weights you just trained.
+
+export_model = tf.keras.Sequential([
+  vectorize_layer,
+  model,
+  layers.Activation('sigmoid')
+])
+
+export_model.compile(
+    loss=losses.BinaryCrossentropy(from_logits=False), optimizer="adam", metrics=['accuracy']
+)
+
+# # Test it with `raw_test_ds`, which yields raw strings
+# loss, accuracy = export_model.evaluate(raw_test_ds)
+# print(accuracy)
+
+# # model.predict() for new data
+# examples = [
+#   "The movie was great!",
+#   "The movie was okay.",
+#   "The movie was terrible..."
+# ]
+
+# export_model.predict(examples)
