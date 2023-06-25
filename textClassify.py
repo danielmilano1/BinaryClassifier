@@ -227,15 +227,20 @@ export_model.compile(
     loss=losses.BinaryCrossentropy(from_logits=False), optimizer="adam", metrics=['accuracy']
 )
 
-# # Test it with `raw_test_ds`, which yields raw strings
-# loss, accuracy = export_model.evaluate(raw_test_ds)
-# print(accuracy)
+# Test it with `raw_test_ds`, which yields raw strings
+loss, accuracy = export_model.evaluate(raw_test_ds)
+print(accuracy)
 
-# # model.predict() for new data
-# examples = [
-#   "The movie was great!",
-#   "The movie was okay.",
-#   "The movie was terrible..."
-# ]
+# model.predict() for new data
+examples = [
+  "The movie was great!",
+  "The movie was okay.",
+  "The movie was terrible..."
+]
 
-# export_model.predict(examples)
+export_model.predict(examples)
+
+# There is a performance difference to keep in mind when choosing where to apply your TextVectorization layer. Using it outside of your 
+# model enables you to do asynchronous CPU processing and buffering of your data when training on GPU. So, if you're training your model
+#  on the GPU, you probably want to go with this option to get the best performance while developing your model, then switch to including
+#  the TextVectorization layer inside your model when you're ready to prepare for deployment.
