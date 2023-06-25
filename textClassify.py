@@ -64,3 +64,34 @@ raw_val_ds = tf.keras.utils.text_dataset_from_directory(
 raw_test_ds = tf.keras.utils.text_dataset_from_directory(
     'aclImdb/test', 
     batch_size=batch_size)
+
+# Next, you will standardize, tokenize, and vectorize the data 
+# using the helpful tf.keras.layers.TextVectorization layer.
+
+def custom_standardization(input_data):
+  lowercase = tf.strings.lower(input_data)
+  stripped_html = tf.strings.regex_replace(lowercase, '', ' ')
+  return tf.strings.regex_replace(stripped_html,
+                                  '[%s]' % re.escape(string.punctuation),
+                                  '')
+
+# Next, you will create a TextVectorization layer. You will use this layer to standardize, 
+# tokenize, and vectorize our data. You set the output_mode to int 
+# to create unique integer indices for each token.
+
+max_features = 10000
+sequence_length = 250
+
+vectorize_layer = layers.TextVectorization(
+    standardize=custom_standardization,
+    max_tokens=max_features,
+    output_mode='int',
+    output_sequence_length=sequence_length)
+
+# Next, you will call adapt to fit the state of the preprocessing layer to the dataset. This will cause the model to build an index of strings to integers.
+
+# Note: It's important to only use your training data when calling adapt (using the test set would leak information).
+
+# Make a text-only dataset (without labels), then call adapt
+train_text = raw_train_ds.map(lambda x, y: x)
+vectorize_layer.adapt(train_text)
