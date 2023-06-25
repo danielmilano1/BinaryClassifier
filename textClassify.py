@@ -118,3 +118,31 @@ print('Vocabulary size: {}'.format(len(vectorize_layer.get_vocabulary())))
 train_ds = raw_train_ds.map(vectorize_text)
 val_ds = raw_val_ds.map(vectorize_text)
 test_ds = raw_test_ds.map(vectorize_text)
+
+# Enhance performance
+
+AUTOTUNE = tf.data.AUTOTUNE
+
+train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+#### Create the model ######
+embedding_dim = 16
+
+model = tf.keras.Sequential([
+  layers.Embedding(max_features + 1, embedding_dim),
+  layers.Dropout(0.2),
+  layers.GlobalAveragePooling1D(),
+  layers.Dropout(0.2),
+  layers.Dense(1)])
+
+model.summary()
+
+# The layers are stacked sequentially to build the classifier:
+# The first layer is an Embedding layer. This layer takes the integer-encoded reviews and looks up an embedding vector for each word-index. 
+# These vectors are learned as the model trains. The vectors add a dimension to the output array. 
+# The resulting dimensions are: (batch, sequence, embedding). To learn more about embeddings, check out the Word embeddings tutorial.
+# Next, a GlobalAveragePooling1D layer returns a fixed-length output vector for each example by averaging over the sequence dimension. 
+# This allows the model to handle input of variable length, in the simplest way possible.
+# The last layer is densely connected with a single output node.
