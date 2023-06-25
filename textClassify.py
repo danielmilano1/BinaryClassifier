@@ -146,3 +146,14 @@ model.summary()
 # Next, a GlobalAveragePooling1D layer returns a fixed-length output vector for each example by averaging over the sequence dimension. 
 # This allows the model to handle input of variable length, in the simplest way possible.
 # The last layer is densely connected with a single output node.
+
+# configure the model to use an optimizer and a loss function:
+model.compile(loss=losses.BinaryCrossentropy(from_logits=True),
+              optimizer='adam',
+              metrics=tf.metrics.BinaryAccuracy(threshold=0.0))
+# You will train the model by passing the dataset object to the fit method.
+epochs = 10
+history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=epochs)
