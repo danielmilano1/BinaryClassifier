@@ -95,3 +95,26 @@ vectorize_layer = layers.TextVectorization(
 # Make a text-only dataset (without labels), then call adapt
 train_text = raw_train_ds.map(lambda x, y: x)
 vectorize_layer.adapt(train_text)
+
+# result from using layer
+def vectorize_text(text, label):
+  text = tf.expand_dims(text, -1)
+  return vectorize_layer(text), label
+
+# retrieve a batch (of 32 reviews and labels) from the dataset
+text_batch, label_batch = next(iter(raw_train_ds))
+first_review, first_label = text_batch[0], label_batch[0]
+print("Review", first_review)
+print("Label", raw_train_ds.class_names[first_label])
+print("Vectorized review", vectorize_text(first_review, first_label))
+
+print("1287 ---> ",vectorize_layer.get_vocabulary()[1287])
+print(" 313 ---> ",vectorize_layer.get_vocabulary()[313])
+print('Vocabulary size: {}'.format(len(vectorize_layer.get_vocabulary())))
+
+# As a final preprocessing step, you will apply the TextVectorization layer 
+# you created earlier to the train, validation, and test dataset.
+
+train_ds = raw_train_ds.map(vectorize_text)
+val_ds = raw_val_ds.map(vectorize_text)
+test_ds = raw_test_ds.map(vectorize_text)
