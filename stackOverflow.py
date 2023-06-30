@@ -5,15 +5,20 @@ import shutil
 import string
 import tensorflow as tf
 import numpy
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
 
 from keras import layers
 from keras import losses
 from keras.optimizers import Adam
 
+from keras.preprocessing.text import Tokenizer
+
 
 print(tf.__version__)
+# only fetch url once and store it in cache
 
-url = "https://storage.googleapis.com/download.tensorflow.org/data/stack_overflow_16k.tar.gz"
+url = "/stack_overflow_16k.tar.gz"
 
 dataset = tf.keras.utils.get_file("stack_overflow_16k", url,
                                     untar=True, cache_dir='.',
@@ -45,7 +50,7 @@ os.listdir(java_dir)
 # it is a best practice to divide your dataset 
 # into three splits: train, validation, and test.
 
-batch_size = 36
+batch_size = 32
 seed = 42
 
 raw_train_ds = tf.keras.utils.text_dataset_from_directory(
@@ -54,19 +59,20 @@ raw_train_ds = tf.keras.utils.text_dataset_from_directory(
     validation_split=0.2, 
     subset='training', 
     seed=seed)
-
-# for text_batch, label_batch in raw_train_ds.take(1):
-#   for i in range(2):
-#     print(i)
-#     print("Review", text_batch.numpy()[i])
-#     print("Label", label_batch.numpy()[i])
-#     print()
-
+# below we can see the first 2 reviews and labels from the training set.
+for text_batch, label_batch in raw_train_ds.take(1):
+  for i in range(2):
+    print(i)
+    print("Review", text_batch.numpy()[i])
+    print()
+    print("Label", label_batch.numpy()[i])
+    print()
+print()
 print("Label 0 corresponds to", raw_train_ds.class_names[0])
 print("Label 1 corresponds to", raw_train_ds.class_names[1])
 print("Label 2 corresponds to", raw_train_ds.class_names[2])
 print("Label 3 corresponds to", raw_train_ds.class_names[3])
-
+print()
 raw_val_ds = tf.keras.utils.text_dataset_from_directory(
     'train', 
     batch_size=batch_size, 
@@ -75,18 +81,26 @@ raw_val_ds = tf.keras.utils.text_dataset_from_directory(
     seed=seed)
 
 raw_test_ds = tf.keras.utils.text_dataset_from_directory(
-    'train', 
-    batch_size=batch_size)
+    'test', 
+    batch_size=batch_size
+    )
 
 # Next, you will standardize, tokenize, and vectorize the data 
 # using the helpful tf.keras.layers.TextVectorization layer.
 
+# def custom_standardization(input_data):
+#   lowercase = tf.strings.lower(input_data)
+#   stripped_html = tf.strings.regex_replace(lowercase, '', ' ')
+#   return tf.strings.regex_replace(stripped_html,
+#                                   '[%s]' % re.escape(string.punctuation),
+#                                   '')
 def custom_standardization(input_data):
-  lowercase = tf.strings.lower(input_data)
-  stripped_html = tf.strings.regex_replace(lowercase, '', ' ')
-  return tf.strings.regex_replace(stripped_html,
-                                  '[%s]' % re.escape(string.punctuation),
-                                  '')
+    # this will strip HTML break tags '<br />'
+    tf.strings.regex_replace(input_data, '<br />', ' ')
+    # this will replace punctuation with spaces
+    tf.strings.regex_replace(input_data, '[%s]' % re.escape(string.punctuation), '')
+    print(input_data)
+    return input_data
 
 # Next, you will create a TextVectorization layer. You will use this layer to standardize, 
 # tokenize, and vectorize our data. You set the output_mode to int 
@@ -105,10 +119,30 @@ vectorize_layer = layers.TextVectorization(
 
 # Note: It's important to only use your training data when calling adapt (using the test set would leak information).
 
+# Tokenization
+# tokenizer = Tokenizer()
+# tokenizer.fit_on_texts(train_text)
+
+# train_sequences = tokenizer.texts_to_sequences(train_text)
+# test_sequences = tokenizer.texts_to_sequences(raw_test_ds)
+
+# # Padding
+# max_sequence_length = 100  # Define your desired sequence length
+# train_pad_seq = tf.keras.preprocessing.sequence.pad_sequences(train_sequences, maxlen=max_sequence_length)
+# test_pad_seq = tf.keras.preprocessing.sequence.pad_sequences(test_sequences, maxlen=max_sequence_length)
+
+
+# # Normalization
+# train_norm = tf.keras.utils.normalize(train_pad_seq)
+# test_norm = tf.keras.utils.normalize(test_pad_seq)
 # Make a text-only dataset (without labels), then call adapt
 train_text = raw_train_ds.map(lambda x, y: x)
 vectorize_layer.adapt(train_text)
-
+# print index of strings to integers
+print()
+print('Strings to ints')
+print(vectorize_layer.get_vocabulary()[:10])
+print()
 # result from using layer
 def vectorize_text(text, label):
   text = tf.expand_dims(text, -1)
@@ -117,10 +151,8 @@ def vectorize_text(text, label):
 # retrieve a batch (of 32 reviews and labels) from the dataset
 text_batch, label_batch = next(iter(raw_train_ds))
 first_review, first_label = text_batch[0], label_batch[0]
-# if the review contains the word blank, remove it, then insert the first_label in its place
-first_review = tf.where(first_review == b'blank', first_label, first_review)
-print("Review", first_review)
 # print("Label", raw_train_ds.class_names[first_label])
+# print("Review", first_review)
 # print("Vectorized review", vectorize_text(first_review, first_label))
 
 vocabulary = vectorize_layer.get_vocabulary()
@@ -154,7 +186,10 @@ model = tf.keras.Sequential([
   layers.Dropout(0.1),
   layers.GlobalAveragePooling1D(),
   layers.Dropout(0.1),
-  layers.Dense(4)])
+  layers.Dense(4),
+  layers.Dense(4),
+  layers.Activation('softmax')
+  ])
 
 model.summary()
 
@@ -167,16 +202,21 @@ model.summary()
 # The last layer is densely connected with a single output node.
 
 # configure the model to use an optimizer and a loss function:
-lr_scheduler = tf.keras.callbacks.LearningRateScheduler(lambda epoch: 1e-8 * 10**(epoch / 20))
+early_stopping = tf.keras.callbacks.EarlyStopping(
+    monitor='val_loss',   # Metric to monitor for early stopping
+    patience=3,           # Number of epochs with no improvement after which training will be stopped
+    verbose=1             # Prints a message when training is stopped
+)
+lr_scheduler = tf.keras.callbacks.LearningRateScheduler(lambda epoch: 1e-4 * 10**(epoch / 20))
 model.compile(loss=losses.SparseCategoricalCrossentropy(from_logits=True),
-              optimizer=Adam(learning_rate=0.005),
+              optimizer=Adam(learning_rate=0.002),
               metrics=['accuracy'])
 # You will train the model by passing the dataset object to the fit method.
 epochs = 20
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    callbacks=[lr_scheduler],
+    callbacks=[lr_scheduler, early_stopping],
     epochs=epochs)
 
 ## Evaluate the model
@@ -186,9 +226,17 @@ print()
 print("Loss: ", loss)
 print("Accuracy: ", accuracy)
 print()
+def remove_blank(raw_test_ds):
+    for text_batch, label_batch in raw_test_ds:
+        for i in range(len(text_batch)):
+            if text_batch[i] == "blank":
+                text_batch[i] = ""
+    return raw_test_ds
+raw_test_ds = remove_blank(raw_test_ds)
+raw_train_ds = remove_blank(raw_train_ds)
+raw_val_ds = remove_blank(raw_val_ds)
 # model.fit() returns a History object that 
 # contains a dictionary with everything that happened during training:
-
 history_dict = history.history
 history_dict.keys()
 
@@ -213,16 +261,6 @@ plt.legend()
 
 plt.show()
 
-# lrs = 1e-4 * (10 ** (numpy.arange(100) / 20))
-# plt.figure(figsize=(10, 7))
-# plt.plot(lrs, loss, 'bo', label='Learning loss')
-# plt.semilogx(lrs, history_3.history["loss"] )
-plt.xlabel("Learning rate")
-plt.ylabel("Loss")
-plt.title("Learning rate vs Loss")
-
-plt.show()
-
 plt.plot(epochs, acc, 'bo', label='Training acc')
 plt.plot(epochs, val_acc, 'b', label='Validation acc')
 plt.title('Training and validation accuracy')
@@ -243,29 +281,43 @@ plt.show()
 
 # you can include the TextVectorization layer inside your model. To do so, you can create a new model using the weights you just trained.
 # go through raw_test_ds, remove the word "blank" and return new raw_test_ds
+#remove the word "blank" from raw_test_ds
+
 export_model = tf.keras.Sequential([
   vectorize_layer,
-  model,
-  layers.Activation('sigmoid')
+  model
 ])
 
 export_model.compile(
-    loss=losses.SparseCategoricalCrossentropy(from_logits=False), optimizer="adam", metrics=['accuracy']
+   loss=losses.SparseCategoricalCrossentropy(from_logits=True), optimizer="adam", metrics=['accuracy']
 )
-model.fit(train_ds)
-# Test it with `raw_test_ds`, which yields raw strings
+
+model.fit(
+   train_ds,
+   validation_data=val_ds,
+   epochs=50,
+   callbacks=[early_stopping]
+   )
+
 loss, accuracy = export_model.evaluate(raw_test_ds)
 print('Evaluated', accuracy)
 
 # model.predict() for new data
 examples = [
-  "incrementing a for loop by decimal value i'm trying to implement a for loop that increments by 0.1. i have one that seems to work just fine for an Javascript?",
-  "callback function in javascript",
-  "calculating mileage rates i'm creating a hr mileage and expenses system but am struggling to come up with ",
+  "how to split a string without delimiters? i have string ""513"". i need array [""5"", ""1"", ""3""].",
+  "is there a way that i can compare an array and an arraylist? is there a way that i can compare an array and an arraylist like..if (array[0]==arraylist[0])...i am working on this problem",
+  "java.lang.string java cannot be cast to java.lang.integer i am getting this error when trying to get data from table.",
+  "blankfx serialization textfield i'm using serialization in my blankfx window app. but i can't store user nick (can't serialize blankfx elements) so is there a good option to store it? store it"
 ]
 
 data = numpy.array(export_model.predict(examples))
-
+print()
+print(data)
+print()
+tf.debugging.set_log_device_placement(True)
+# which gpu
+print(tf.test.gpu_device_name())
+print()
 max_indices = numpy.argmax(data, axis=1)
 
 types = ['python', 'javascript', 'csharp', 'java']
@@ -275,8 +327,6 @@ for i in range(len(max_indices)):
     print(examples[i])
     print(types[max_indices[i]])
     print()
-
-
 
 # There is a performance difference to keep in mind when choosing where to apply your TextVectorization layer. Using it outside of your 
 # model enables you to do asynchronous CPU processing and buffering of your data when training on GPU. So, if you're training your model
